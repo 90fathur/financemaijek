@@ -269,6 +269,17 @@ class InvestorController extends BaseController
         $this->investorModel->recalculateInvestment($id);
         $this->kasAccountModel->recalculateBalance($kasAccountId);
 
+        // Kirim Notifikasi WhatsApp ke Grup secara Dinamis
+        try {
+            $waService = new \App\Libraries\WhatsAppService();
+            if ($waService->isReady()) {
+                $kasObj = $this->kasAccountModel->find($kasAccountId) ?? [];
+                $waService->sendCapitalNotice($investor, $jumlah, $kasObj, $tanggal, $keterangan);
+            }
+        } catch (\Throwable $e) {
+            log_message('error', 'WA Capital Notification failed: ' . $e->getMessage());
+        }
+
         return redirect()->to(base_url('investors/detail/' . $id))->with('success', 'Suntikan modal sebesar ' . format_rupiah($jumlah) . ' berhasil ditambahkan!');
     }
 
@@ -292,12 +303,19 @@ class InvestorController extends BaseController
         $catId = $cat['id'] ?? 12;
 
         $count = 0;
+        $dividendRecipients = [];
         foreach ($activeInvestors as $inv) {
             $persen = (float)$inv['persentase_bagi_hasil'];
             if ($persen <= 0) continue;
 
             $nominalBagiHasil = ($persen / 100) * $totalLaba;
             if ($nominalBagiHasil <= 0) continue;
+
+            $dividendRecipients[] = [
+                'nama_investor'   => $inv['nama_investor'],
+                'persentase'      => $persen,
+                'nominal_dividen' => $nominalBagiHasil,
+            ];
 
             $nomorTransaksi = $this->transactionModel->generateNomorTransaksi('pengeluaran');
             $txId = $this->transactionModel->insert([
@@ -329,6 +347,17 @@ class InvestorController extends BaseController
         }
 
         $this->kasAccountModel->recalculateBalance($kasAccountId);
+
+        // Kirim Notifikasi WhatsApp ke Grup secara Dinamis
+        try {
+            $waService = new \App\Libraries\WhatsAppService();
+            if ($waService->isReady() && !empty($dividendRecipients)) {
+                $kasObj = $this->kasAccountModel->find($kasAccountId) ?? [];
+                $waService->sendDividendNotice($periode, $totalLaba, $dividendRecipients, $kasObj);
+            }
+        } catch (\Throwable $e) {
+            log_message('error', 'WA Dividend Notification failed: ' . $e->getMessage());
+        }
 
         return redirect()->to(base_url('investors'))->with('success', "Dividen periode {$periode} berhasil dicairkan kepada {$count} investor!");
     }

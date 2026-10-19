@@ -150,6 +150,19 @@ class TransactionController extends BaseController
             }
         }
 
+        // Kirim Notifikasi WhatsApp ke Grup secara Dinamis (non-blocking)
+        try {
+            $waService = new \App\Libraries\WhatsAppService();
+            if ($waService->isReady()) {
+                $categoryObj = $this->categoryModel->find($categoryId) ?? [];
+                $kasObj      = $this->kasAccountModel->find($kasAccountId) ?? [];
+                $invObj      = $investorId ? ($this->investorModel->find($investorId) ?? null) : null;
+                $waService->sendTransactionNotice($txData, $categoryObj, $kasObj, $invObj);
+            }
+        } catch (\Throwable $e) {
+            log_message('error', 'WA Notification failed: ' . $e->getMessage());
+        }
+
         return redirect()->to(base_url('transactions'))->with('success', "Transaksi {$nomorTransaksi} berhasil dicatat!");
     }
 

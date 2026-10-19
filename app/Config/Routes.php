@@ -49,4 +49,10 @@ $routes->group('', ['filter' => 'auth'], static function ($routes) {
     // Reports
     $routes->get('reports', 'ReportController::index');
     $routes->get('reports/print', 'ReportController::print');
+
+    // Dynamic WhatsApp Group Integration
+    $routes->get('settings/whatsapp', 'WhatsAppSettingController::index');
+    $routes->post('settings/whatsapp/save', 'WhatsAppSettingController::save');
+    $routes->post('settings/whatsapp/test-send', 'WhatsAppSettingController::testSend');
+    $routes->post('settings/whatsapp/send-daily', 'WhatsAppSettingController::sendDailySummary');
 });

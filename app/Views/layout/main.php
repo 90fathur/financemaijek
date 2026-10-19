@@ -438,8 +438,13 @@
                 <span>Akun Kas & Bank</span>
             </a>
 
-            <div class="sidebar-header mt-2">Sistem</div>
-            <div class="px-2 py-2 mt-1 rounded" style="background: rgba(255,255,255,0.03); border: 1px solid #1e293b;">
+            <div class="sidebar-header mt-2">Sistem & Integrasi</div>
+            <a href="<?= base_url('settings/whatsapp') ?>" class="nav-link-custom <?= url_is('settings/whatsapp*') ? 'active' : '' ?>">
+                <i class="bi bi-whatsapp text-success"></i>
+                <span>Pengaturan WA Grup</span>
+                <span class="badge bg-success-subtle text-success ms-auto py-0 px-1" style="font-size: 9.5px;">CloudChat</span>
+            </a>
+            <div class="px-2 py-2 mt-2 rounded" style="background: rgba(255,255,255,0.03); border: 1px solid #1e293b;">
                 <div class="micro-text text-muted">Status Koneksi</div>
                 <div class="d-flex align-items-center gap-2 mt-1">
                     <span class="spinner-grow spinner-grow-sm text-success" style="width: 8px; height: 8px;" role="status"></span>
