@@ -79,15 +79,32 @@ class WhatsAppSettingController extends BaseController
         $customMessage = trim((string)$this->request->getPost('test_message'));
         $targetGroup   = trim((string)$this->request->getPost('target_group'));
 
-        $message = !empty($customMessage) ? $customMessage : (
-            "🔔 *TES KONEKSI WHATSAPP GATEWAY MAIJEK*\n" .
-            "━━━━━━━━━━━━━━━━━━━━━\n" .
-            "Halo! Pesan ini dikirim secara dinamis dari sistem *Monitoring Keuangan Maijek* menggunakan provider *CloudChat.id*.\n" .
-            "📅 *Waktu:* " . date('d F Y - H:i:s') . "\n" .
-            "✅ *Status:* Terhubung & Siap menerima notifikasi transaksi dan dividen!\n" .
-            "━━━━━━━━━━━━━━━━━━━━━\n" .
-            "_Maijek Finance System_"
-        );
+        if (empty($customMessage)) {
+            $db = \Config\Database::connect();
+            $totalSisaKas = (float)($db->table('kas_accounts')->selectSum('saldo_saat_ini')->get()->getRow()->saldo_saat_ini ?? 0);
+            $allKas = $db->table('kas_accounts')->orderBy('saldo_saat_ini', 'DESC')->get()->getResultArray();
+
+            $kasList = '';
+            foreach ($allKas as $k) {
+                $kasList .= "• {$k['nama_akun']}: " . format_rupiah($k['saldo_saat_ini']) . "\n";
+            }
+
+            $message = "🔔 *TES KONEKSI WHATSAPP GATEWAY MAIJEK*\n" .
+                "━━━━━━━━━━━━━━━━━━━━━\n" .
+                "Halo Tim & Manajemen Maijek! Pesan ini dikirim secara dinamis via *CloudChat.id*.\n\n" .
+                "📅 *Waktu:* " . format_tanggal_indo(date('Y-m-d'), true) . " - " . date('H:i') . " WITA\n" .
+                "✅ *Status:* Terhubung & Aktif\n\n" .
+                "━━━━━━━━━━━━━━━━━━━━━\n" .
+                "💰 *POSISI SISA KAS SAAT INI*\n" .
+                "━━━━━━━━━━━━━━━━━━━━━\n" .
+                "💎 *Total Kas & Bank:* *" . format_rupiah($totalSisaKas) . "*\n\n" .
+                "*Rincian Rekening Kas:*\n" .
+                ($kasList ?: "• Belum ada akun kas terdaftar\n") .
+                "━━━━━━━━━━━━━━━━━━━━━\n" .
+                "_Maijek Finance System_ 🚀";
+        } else {
+            $message = $customMessage;
+        }
 
         // Instansiasi ulang untuk memuat setting terbaru
         $service = new WhatsAppService();

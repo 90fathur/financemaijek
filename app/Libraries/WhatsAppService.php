@@ -130,7 +130,7 @@ class WhatsAppService
     }
 
     /**
-     * Kirim notifikasi transaksi baru (pemasukan / pengeluaran)
+     * Kirim notifikasi transaksi baru (pemasukan / pengeluaran) beserta sisa kas terkini
      */
     public function sendTransactionNotice(array $trx, array $cat, array $kas, ?array $inv = null): array
     {
@@ -146,14 +146,28 @@ class WhatsAppService
             return ['success' => false, 'message' => 'Notifikasi pengeluaran dinonaktifkan.'];
         }
 
-        $iconHeader = $isPemasukan ? "🟢 *TRANSAKSI PEMASUKAN BARU*" : "🔴 *TRANSAKSI PENGELUARAN BARU*";
+        $db = \Config\Database::connect();
+
+        // Ambil data kas akun yang bersangkutan secara real-time dari database
+        $kasId       = $kas['id'] ?? ($trx['kas_account_id'] ?? null);
+        $freshKas    = $kasId ? $db->table('kas_accounts')->where('id', $kasId)->get()->getRowArray() : $kas;
+        $sisaAkunIni = (float)($freshKas['saldo_saat_ini'] ?? 0);
+        $namaAkunIni = $freshKas['nama_akun'] ?? ($kas['nama_akun'] ?? 'Kas Utama');
+
+        // Ambil total semua saldo kas & bank saat ini
+        $totalSisaKas = (float)($db->table('kas_accounts')->selectSum('saldo_saat_ini')->get()->getRow()->saldo_saat_ini ?? 0);
+
+        // Ambil rincian seluruh akun kas aktif
+        $allKasAccounts = $db->table('kas_accounts')->orderBy('saldo_saat_ini', 'DESC')->get()->getResultArray();
+
+        $iconHeader = $isPemasukan ? "🟢 *LAPORAN PEMASUKAN BARU*" : "🔴 *LAPORAN PENGELUARAN BARU*";
         $badgeTipe  = $isPemasukan ? "Pemasukan (+)" : "Pengeluaran (-)";
+        $labelKas   = $isPemasukan ? "Masuk ke Kas/Bank" : "Sumber Kas/Bank";
         $nominal    = format_rupiah($trx['jumlah'] ?? 0);
         $tglIndo    = format_tanggal_indo($trx['tanggal'] ?? date('Y-m-d'), true);
         $noTrx      = $trx['nomor_transaksi'] ?? '-';
         $judul      = $trx['judul'] ?? '-';
         $kategori   = $cat['nama_kategori'] ?? 'Umum';
-        $namaKas    = $kas['nama_akun'] ?? 'Kas Utama';
         $penginput  = $trx['nama_penginput'] ?? 'Admin';
         $keterangan = !empty($trx['keterangan']) ? $trx['keterangan'] : '-';
 
@@ -161,17 +175,34 @@ class WhatsAppService
         $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
         $text .= "📌 *No. Trx:* `{$noTrx}`\n";
         $text .= "📅 *Tanggal:* {$tglIndo}\n";
-        $text .= "💵 *Nominal:* *{$nominal}* ({$badgeTipe})\n";
+        $text .= "💸 *Nominal:* *{$nominal}* ({$badgeTipe})\n";
         $text .= "🏷️ *Kategori:* {$kategori}\n";
-        $text .= "🏦 *Akun Kas:* {$namaKas}\n";
-        $text .= "📋 *Deskripsi:* {$judul}\n";
+        $text .= "📋 *Keperluan:* {$judul}\n";
+        $text .= "🏦 *{$labelKas}:* {$namaAkunIni}\n";
         if ($keterangan !== '-') {
             $text .= "📝 *Catatan:* {$keterangan}\n";
         }
         if ($inv && !empty($inv['nama_investor'])) {
             $text .= "👤 *Investor Terkait:* {$inv['nama_investor']}\n";
         }
-        $text .= "👤 *Diinput Oleh:* {$penginput}\n";
+        $text .= "👤 *Diinput Oleh:* {$penginput}\n\n";
+
+        // Bagian Posisi Sisa Kas Yang Ada
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "💰 *POSISI SISA KAS TERKINI*\n";
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $iconSaldoAkun = $isPemasukan ? "📈" : "📉";
+        $text .= "{$iconSaldoAkun} *Sisa Saldo {$namaAkunIni}:*\n➔ *" . format_rupiah($sisaAkunIni) . "*\n\n";
+        $text .= "💎 *Total Kas & Bank Keseluruhan:*\n➔ *" . format_rupiah($totalSisaKas) . "*\n\n";
+
+        if (!empty($allKasAccounts)) {
+            $text .= "*Rincian Sisa Kas per Rekening:*\n";
+            foreach ($allKasAccounts as $acc) {
+                $isCurrent = ($acc['id'] == $kasId) ? " *(Terdampak)*" : "";
+                $text .= "• {$acc['nama_akun']}: " . format_rupiah($acc['saldo_saat_ini']) . "{$isCurrent}\n";
+            }
+        }
+
         $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
         $text .= "_Sistem Monitoring Keuangan Maijek_ 🚀";
 
@@ -179,7 +210,7 @@ class WhatsAppService
     }
 
     /**
-     * Kirim notifikasi suntikan modal baru dari investor
+     * Kirim notifikasi suntikan modal baru dari investor beserta posisi kas terkini
      */
     public function sendCapitalNotice(array $inv, float $amount, array $kas, string $tgl, ?string $ket = null): array
     {
@@ -187,33 +218,55 @@ class WhatsAppService
             return ['success' => false, 'message' => 'Notifikasi suntik modal dinonaktifkan.'];
         }
 
+        $db = \Config\Database::connect();
+        $kasId       = $kas['id'] ?? null;
+        $freshKas    = $kasId ? $db->table('kas_accounts')->where('id', $kasId)->get()->getRowArray() : $kas;
+        $sisaAkunIni = (float)($freshKas['saldo_saat_ini'] ?? 0);
+        $namaAkunIni = $freshKas['nama_akun'] ?? ($kas['nama_akun'] ?? 'Kas Penampungan');
+        $totalSisaKas = (float)($db->table('kas_accounts')->selectSum('saldo_saat_ini')->get()->getRow()->saldo_saat_ini ?? 0);
+        $allKasAccounts = $db->table('kas_accounts')->orderBy('saldo_saat_ini', 'DESC')->get()->getResultArray();
+
         $namaInv     = $inv['nama_investor'] ?? 'Investor';
         $kodeInv     = $inv['kode_investor'] ?? '-';
         $nominal     = format_rupiah($amount);
         $totalModal  = format_rupiah($inv['total_investasi'] ?? $amount);
         $share       = ($inv['persentase_bagi_hasil'] ?? 0) . '%';
-        $namaKas     = $kas['nama_akun'] ?? 'Kas Penampungan';
         $tglIndo     = format_tanggal_indo($tgl, true);
         $keterangan  = $ket ?: 'Suntikan modal ekspansi operasional';
 
         $text = "💼 *SUNTIKAN MODAL INVESTOR BARU*\n";
         $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
         $text .= "👤 *Investor:* *{$namaInv}* (`{$kodeInv}`)\n";
-        $text .= "💰 *Nominal Dana:* *{$nominal}*\n";
-        $text .= "📈 *Akumulasi Modal:* {$totalModal}\n";
+        $text .= "💰 *Nominal Dana Masuk:* *{$nominal}*\n";
+        $text .= "📈 *Akumulasi Modal Investor:* {$totalModal}\n";
         $text .= "📊 *Porsi Bagi Hasil:* {$share}\n";
-        $text .= "🏦 *Diterima di Kas:* {$namaKas}\n";
+        $text .= "🏦 *Diterima di Kas:* {$namaAkunIni}\n";
         $text .= "📅 *Tanggal Efektif:* {$tglIndo}\n";
-        $text .= "📝 *Keterangan:* {$keterangan}\n";
+        $text .= "📝 *Keterangan:* {$keterangan}\n\n";
+
         $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
-        $text .= "Terima kasih atas kepercayaan dan dukungan bagi pertumbuhan armada Maijek Nusantara! 🛵\n";
+        $text .= "💰 *POSISI SISA KAS TERKINI*\n";
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "📈 *Sisa Saldo {$namaAkunIni}:*\n➔ *" . format_rupiah($sisaAkunIni) . "*\n\n";
+        $text .= "💎 *Total Kas & Bank Keseluruhan:*\n➔ *" . format_rupiah($totalSisaKas) . "*\n\n";
+
+        if (!empty($allKasAccounts)) {
+            $text .= "*Rincian Sisa Kas per Rekening:*\n";
+            foreach ($allKasAccounts as $acc) {
+                $isCurrent = ($acc['id'] == $kasId) ? " *(Terdampak)*" : "";
+                $text .= "• {$acc['nama_akun']}: " . format_rupiah($acc['saldo_saat_ini']) . "{$isCurrent}\n";
+            }
+        }
+
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "Terima kasih atas dukungan investasi bagi pertumbuhan armada Maijek Nusantara! 🛵\n";
         $text .= "_Sistem Monitoring Keuangan Maijek_";
 
         return $this->sendMessage($text);
     }
 
     /**
-     * Kirim notifikasi distribusi dividen / bagi hasil
+     * Kirim notifikasi distribusi dividen / bagi hasil beserta sisa kas terkini
      */
     public function sendDividendNotice(string $periode, float $totalPool, array $penerima, array $kas): array
     {
@@ -221,15 +274,22 @@ class WhatsAppService
             return ['success' => false, 'message' => 'Notifikasi dividen dinonaktifkan.'];
         }
 
+        $db = \Config\Database::connect();
+        $kasId       = $kas['id'] ?? null;
+        $freshKas    = $kasId ? $db->table('kas_accounts')->where('id', $kasId)->get()->getRowArray() : $kas;
+        $sisaAkunIni = (float)($freshKas['saldo_saat_ini'] ?? 0);
+        $namaAkunIni = $freshKas['nama_akun'] ?? ($kas['nama_akun'] ?? 'Kas Operasional');
+        $totalSisaKas = (float)($db->table('kas_accounts')->selectSum('saldo_saat_ini')->get()->getRow()->saldo_saat_ini ?? 0);
+        $allKasAccounts = $db->table('kas_accounts')->orderBy('saldo_saat_ini', 'DESC')->get()->getResultArray();
+
         $nominalPool = format_rupiah($totalPool);
-        $namaKas     = $kas['nama_akun'] ?? 'Kas Operasional';
         $tglIndo     = format_tanggal_indo(date('Y-m-d'), true);
 
         $text = "🎉 *DISTRIBUSI DIVIDEN INVESTOR CAIR*\n";
         $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
         $text .= "🗓️ *Periode Dividen:* *{$periode}*\n";
-        $text .= "💵 *Total Alokasi Dividen:* *{$nominalPool}*\n";
-        $text .= "🏦 *Sumber Dana:* {$namaKas}\n";
+        $text .= "💵 *Total Dana Cair:* *{$nominalPool}*\n";
+        $text .= "🏦 *Sumber Dana:* {$namaAkunIni}\n";
         $text .= "📅 *Tanggal Pencairan:* {$tglIndo}\n\n";
         $text .= "*Rincian Pembagian per Investor:*\n";
 
@@ -240,6 +300,20 @@ class WhatsAppService
             $pct  = ($p['persentase'] ?? 0) . '%';
             $text .= "{$no}. *{$nama}* ({$pct}) ➔ *{$nom}*\n";
             $no++;
+        }
+
+        $text .= "\n━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "💰 *POSISI SISA KAS TERKINI*\n";
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "📉 *Sisa Saldo {$namaAkunIni}:*\n➔ *" . format_rupiah($sisaAkunIni) . "*\n\n";
+        $text .= "💎 *Total Kas & Bank Keseluruhan:*\n➔ *" . format_rupiah($totalSisaKas) . "*\n\n";
+
+        if (!empty($allKasAccounts)) {
+            $text .= "*Rincian Sisa Kas per Rekening:*\n";
+            foreach ($allKasAccounts as $acc) {
+                $isCurrent = ($acc['id'] == $kasId) ? " *(Terdampak)*" : "";
+                $text .= "• {$acc['nama_akun']}: " . format_rupiah($acc['saldo_saat_ini']) . "{$isCurrent}\n";
+            }
         }
 
         $text .= "━━━━━━━━━━━━━━━━━━━━━\n";

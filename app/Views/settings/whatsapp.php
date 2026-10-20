@@ -140,7 +140,7 @@
                                 <input class="form-check-input ms-0 me-2" type="checkbox" name="wa_notify_expense" value="1" id="eventExpense" <?= ($settings['wa_notify_expense'] === '1') ? 'checked' : '' ?>>
                                 <label class="form-check-label text-dark" for="eventExpense" style="font-size: 11.5px;">
                                     <span class="fw-semibold text-danger">🔴 Pengeluaran Baru</span>
-                                    <span class="d-block micro-text text-muted">Biaya server, sewa, belanja operasional</span>
+                                    <span class="d-block micro-text text-muted">Laporan pengeluaran + rincian sisa kas yang ada</span>
                                 </label>
                             </div>
                         </div>
