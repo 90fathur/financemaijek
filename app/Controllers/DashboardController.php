@@ -144,8 +144,29 @@ class DashboardController extends BaseController
             'expenseCategories'   => $expenseCategories,
             'incomeCategories'    => $incomeCategories,
             'recentTransactions'  => $recentTransactions,
+            'waReady'             => (new \App\Libraries\WhatsAppService())->isReady(),
+            'waGroupId'           => (new \App\Models\SettingModel())->getVal('wa_group_id', ''),
         ];
 
         return view('dashboard/index', $data);
+    }
+
+    /**
+     * Kirim Laporan Rekap Lengkap Keuangan ke Grup WhatsApp dari Dashboard
+     */
+    public function sendWaRecap()
+    {
+        $period     = trim((string)$this->request->getPost('period')) ?: 'today';
+        $customNote = trim((string)$this->request->getPost('custom_note'));
+        $senderName = session()->get('nama') ?? 'Manajemen Maijek';
+
+        $waService = new \App\Libraries\WhatsAppService();
+        $result    = $waService->sendFullExecutiveRecapNotice($period, $customNote, $senderName);
+
+        if ($result['success']) {
+            return redirect()->to(base_url('dashboard'))->with('success', 'Laporan Rekap Lengkap Keuangan berhasil dikirim ke Grup WhatsApp!');
+        }
+
+        return redirect()->to(base_url('dashboard'))->with('error', 'Gagal kirim ke Grup WhatsApp: ' . ($result['message'] ?? 'Periksa pengaturan WhatsApp Gateway'));
     }
 }

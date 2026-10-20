@@ -19,6 +19,10 @@
         <a href="<?= base_url('reports') ?>" class="btn btn-outline-secondary btn-compact">
             <i class="bi bi-file-earmark-text"></i> Laporan Laba Rugi
         </a>
+        <button type="button" class="btn btn-success btn-compact shadow-sm d-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#modalKirimWaRecap" title="Kirim Laporan Rekap Lengkap ke Grup WhatsApp">
+            <i class="bi bi-whatsapp"></i>
+            <span>Kirim Rekap ke Grup WA</span>
+        </button>
     </div>
 </div>
 
@@ -306,7 +310,94 @@
                     <span class="fw-bold" style="font-size: 11px;">Total Likuiditas Kas:</span>
                     <span class="fw-extrabold text-emerald fs-6"><?= format_rupiah($totalSaldoKas) ?></span>
                 </div>
+                <div class="p-2 bg-white border-top text-center">
+                    <button type="button" class="btn btn-outline-success btn-compact-xs w-100 d-flex align-items-center justify-content-center gap-1" data-bs-toggle="modal" data-bs-target="#modalKirimWaRecap">
+                        <i class="bi bi-whatsapp"></i>
+                        <span>Kirim Rekap Kas ke Grup WA</span>
+                    </button>
+                </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Kirim Laporan Rekap ke Grup WhatsApp -->
+<div class="modal fade" id="modalKirimWaRecap" tabindex="-1" aria-labelledby="modalKirimWaRecapLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-success text-white py-2 px-3">
+                <h6 class="modal-title fw-bold d-flex align-items-center gap-2" id="modalKirimWaRecapLabel" style="font-size: 13px;">
+                    <i class="bi bi-whatsapp"></i>
+                    <span>Kirim Laporan Rekap Keuangan ke Grup WA</span>
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="<?= base_url('dashboard/send-wa-recap') ?>" method="POST" id="formKirimWaRecap">
+                <?= csrf_field() ?>
+                <div class="modal-body p-3">
+                    <?php if (!empty($waReady)): ?>
+                        <div class="p-2 mb-3 rounded bg-success-subtle border border-success-subtle d-flex align-items-center gap-2" style="font-size: 11.5px; color: #065f46;">
+                            <i class="bi bi-check-circle-fill text-success fs-5 flex-shrink-0"></i>
+                            <div>
+                                <span class="fw-bold d-block">WhatsApp Gateway Siap & Terhubung</span>
+                                <span class="micro-text text-muted">Laporan akan langsung dikirim ke Grup ID: <code><?= esc($waGroupId ?: 'Grup Terdaftar') ?></code></span>
+                            </div>
+                        </div>
+                    <?php else: ?>
+                        <div class="p-2 mb-3 rounded bg-warning-subtle border border-warning-subtle d-flex align-items-center gap-2" style="font-size: 11.5px; color: #92400e;">
+                            <i class="bi bi-exclamation-triangle-fill text-warning fs-5 flex-shrink-0"></i>
+                            <div>
+                                <span class="fw-bold d-block">WhatsApp Gateway Belum Dikonfigurasi</span>
+                                <span class="micro-text text-muted">Silakan atur API Key CloudChat & Group ID di <a href="<?= base_url('settings/whatsapp') ?>" class="text-decoration-underline fw-bold">Pengaturan WA</a> terlebih dahulu.</span>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <label class="form-label fw-bold text-dark mb-2" style="font-size: 11.5px;">
+                        Pilih Cakupan Laporan Rekap:
+                    </label>
+
+                    <div class="d-flex flex-column gap-2 mb-3">
+                        <label class="p-2 rounded border bg-light d-flex align-items-start gap-2 cursor-pointer" style="cursor: pointer;">
+                            <input type="radio" name="period" value="today" checked class="form-check-input mt-1">
+                            <div>
+                                <span class="fw-bold text-dark d-block" style="font-size: 12px;">📊 Rekap Keuangan Hari Ini (<?= date('d M Y') ?>)</span>
+                                <span class="text-muted micro-text">Arus kas hari ini, transaksi terbaru, dan posisi sisa saldo kas/bank saat ini.</span>
+                            </div>
+                        </label>
+
+                        <label class="p-2 rounded border bg-light d-flex align-items-start gap-2 cursor-pointer" style="cursor: pointer;">
+                            <input type="radio" name="period" value="month" class="form-check-input mt-1">
+                            <div>
+                                <span class="fw-bold text-dark d-block" style="font-size: 12px;">🗓️ Rekap Bulan Berjalan (<?= date('F Y') ?>)</span>
+                                <span class="text-muted micro-text">Total akumulasi pemasukan, pengeluaran, laba bersih bulan ini, serta sisa kas.</span>
+                            </div>
+                        </label>
+
+                        <label class="p-2 rounded border bg-light d-flex align-items-start gap-2 cursor-pointer" style="cursor: pointer;">
+                            <input type="radio" name="period" value="all" class="form-check-input mt-1">
+                            <div>
+                                <span class="fw-bold text-dark d-block" style="font-size: 12px;">💎 Rekap Finansial Eksekutif Kumulatif</span>
+                                <span class="text-muted micro-text">Semua data arus kas, modal investor aktif, dividen cair, dan seluruh kas/bank.</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 11px;">
+                            Pesan / Catatan Pengantar Tambahan (Opsional)
+                        </label>
+                        <textarea name="custom_note" rows="2" class="form-control" style="font-size: 11.5px;" placeholder="Contoh: Halo manajemen & tim, berikut rekap laporan kas sore ini..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2 px-3 d-flex justify-content-between">
+                    <button type="button" class="btn btn-outline-secondary btn-compact" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-success btn-compact d-flex align-items-center gap-1 px-3" id="btnSubmitWaRecap">
+                        <i class="bi bi-send-fill"></i>
+                        <span>Kirim Sekarang ke Grup WA</span>
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

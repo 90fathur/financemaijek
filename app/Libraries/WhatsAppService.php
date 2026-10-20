@@ -376,4 +376,136 @@ class WhatsAppService
 
         return $this->sendMessage($text);
     }
+
+    /**
+     * Kirim Laporan Rekap Finansial Lengkap ke Grup WhatsApp (Dipicu dari Tombol Dashboard)
+     */
+    public function sendFullExecutiveRecapNotice(string $period = 'today', ?string $customNote = null, ?string $senderName = null): array
+    {
+        if (!$this->isReady()) {
+            return [
+                'success' => false,
+                'message' => 'WhatsApp Gateway belum aktif atau konfigurasi API Key / Group ID belum lengkap di menu Pengaturan WA.',
+            ];
+        }
+
+        $db = \Config\Database::connect();
+        $today = date('Y-m-d');
+        $currentMonth = date('m');
+        $currentYear = date('Y');
+        $sender = $senderName ?: (session()->get('nama') ?? 'Manajemen Maijek');
+
+        // 1. Data Kas & Bank Real-time
+        $kasAccounts = $db->table('kas_accounts')->orderBy('saldo_saat_ini', 'DESC')->get()->getResultArray();
+        $totalSaldoKas = (float)($db->table('kas_accounts')->selectSum('saldo_saat_ini')->get()->getRow()->saldo_saat_ini ?? 0);
+
+        // 2. Data Arus Kas Hari Ini
+        $inToday = (float)($db->table('transactions')->where('tipe', 'pemasukan')->where('tanggal', $today)->selectSum('jumlah')->get()->getRow()->jumlah ?? 0);
+        $outToday = (float)($db->table('transactions')->where('tipe', 'pengeluaran')->where('tanggal', $today)->selectSum('jumlah')->get()->getRow()->jumlah ?? 0);
+        $countInToday = $db->table('transactions')->where('tipe', 'pemasukan')->where('tanggal', $today)->countAllResults();
+        $countOutToday = $db->table('transactions')->where('tipe', 'pengeluaran')->where('tanggal', $today)->countAllResults();
+        $netToday = $inToday - $outToday;
+
+        // 3. Data Arus Kas Bulan Berjalan
+        $inMonth = (float)($db->table('transactions')->where('tipe', 'pemasukan')->where('MONTH(tanggal)', $currentMonth)->where('YEAR(tanggal)', $currentYear)->selectSum('jumlah')->get()->getRow()->jumlah ?? 0);
+        $outMonth = (float)($db->table('transactions')->where('tipe', 'pengeluaran')->where('MONTH(tanggal)', $currentMonth)->where('YEAR(tanggal)', $currentYear)->selectSum('jumlah')->get()->getRow()->jumlah ?? 0);
+        $netMonth = $inMonth - $outMonth;
+
+        // 4. Data Investor & Dividen
+        $investors = $db->table('investors')->where('status', 'aktif')->get()->getResultArray();
+        $totalModalInvestor = (float)($db->table('investors')->where('status', 'aktif')->selectSum('total_investasi')->get()->getRow()->total_investasi ?? 0);
+        $totalDividenCair = (float)($db->table('investment_logs')->where('tipe', 'dividen_cair')->selectSum('jumlah')->get()->getRow()->jumlah ?? 0);
+
+        // 5. 5 Transaksi Terakhir
+        $recentTrx = $db->table('transactions t')
+            ->select('t.nomor_transaksi, t.tanggal, t.tipe, t.jumlah, t.judul, c.nama_kategori, k.nama_akun')
+            ->join('categories c', 'c.id = t.category_id', 'left')
+            ->join('kas_accounts k', 'k.id = t.kas_account_id', 'left')
+            ->orderBy('t.tanggal', 'DESC')
+            ->orderBy('t.id', 'DESC')
+            ->limit(5)
+            ->get()->getResultArray();
+
+        // Susun Judul Laporan Berdasarkan Periode Pilihan
+        $waktuCetak = format_tanggal_indo($today, true) . ' • ' . date('H:i') . ' WITA';
+
+        if ($period === 'month') {
+            $headerTitle = "📊 *LAPORAN REKAP KEUANGAN BULAN " . strtoupper(date('F Y')) . "*";
+            $subHeader = "Rekapitulasi Arus Kas Bulanan, Portofolio & Sisa Saldo Kas";
+        } elseif ($period === 'all') {
+            $headerTitle = "📊 *LAPORAN REKAP FINANSIAL EKSEKUTIF MAIJEK*";
+            $subHeader = "Laporan Komprehensif Seluruh Arus Kas, Modal & Likuiditas";
+        } else {
+            $headerTitle = "📊 *LAPORAN REKAP KEUANGAN HARIAN MAIJEK*";
+            $subHeader = "Rekap Arus Kas Harian & Posisi Sisa Saldo Kas Real-Time";
+        }
+
+        $text = "{$headerTitle}\n";
+        $text .= "_{$subHeader}_\n";
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "📅 *Waktu Cetak:* {$waktuCetak}\n";
+        $text .= "👤 *Pelapor:* {$sender}\n\n";
+
+        // Section: Posisi Sisa Kas Terkini
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "💰 *POSISI SISA KAS & LIKUIDITAS BANK*\n";
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "💎 *TOTAL KAS & BANK TERKINI:*\n➔ *" . format_rupiah($totalSaldoKas) . "*\n\n";
+        $text .= "*Rincian Sisa Saldo per Akun:*\n";
+        foreach ($kasAccounts as $k) {
+            $text .= "• {$k['nama_akun']}: *" . format_rupiah($k['saldo_saat_ini']) . "*\n";
+        }
+        $text .= "\n";
+
+        // Section: Arus Kas Hari Ini
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "📈 *ARUS KAS HARI INI (" . date('d/m/Y') . ")*\n";
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "🟢 *Pemasukan:* " . format_rupiah($inToday) . " ({$countInToday} transaksi)\n";
+        $text .= "🔴 *Pengeluaran:* " . format_rupiah($outToday) . " ({$countOutToday} transaksi)\n";
+        $netSignToday = ($netToday >= 0) ? "+" : "";
+        $text .= "⚡ *Net Flow Hari Ini:* *{$netSignToday}" . format_rupiah($netToday) . "*\n\n";
+
+        // Section: Akumulasi Bulan Berjalan
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "🗓️ *AKUMULASI BULAN " . strtoupper(date('F Y')) . "*\n";
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "🟢 *Total Pemasukan:* " . format_rupiah($inMonth) . "\n";
+        $text .= "🔴 *Total Pengeluaran:* " . format_rupiah($outMonth) . "\n";
+        $netSignMonth = ($netMonth >= 0) ? "+" : "";
+        $text .= "🏆 *Laba Bersih Bulan Ini:* *{$netSignMonth}" . format_rupiah($netMonth) . "*\n\n";
+
+        // Section: Portofolio Investor
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "👥 *RINGKASAN INVESTASI & MODAL*\n";
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "💼 *Total Modal Investor:* " . format_rupiah($totalModalInvestor) . " (" . count($investors) . " Investor Aktif)\n";
+        $text .= "🎉 *Dividen Telah Dicairkan:* " . format_rupiah($totalDividenCair) . "\n\n";
+
+        // Section: Transaksi Terbaru
+        if (!empty($recentTrx)) {
+            $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+            $text .= "📝 *TRANSAKSI TERBARU (5 TERAKHIR):*\n";
+            $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+            $no = 1;
+            foreach ($recentTrx as $rt) {
+                $iconT = ($rt['tipe'] === 'pemasukan') ? "[IN (+)]" : "[OUT (-)]";
+                $text .= "{$no}. {$iconT} " . format_rupiah($rt['jumlah']) . "\n";
+                $text .= "   ➔ {$rt['judul']} ({$rt['nama_akun']})\n";
+                $no++;
+            }
+            $text .= "\n";
+        }
+
+        // Catatan Pengantar jika ada
+        if (!empty($customNote)) {
+            $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+            $text .= "📌 *Catatan Khusus:*\n_{$customNote}_\n\n";
+        }
+
+        $text .= "━━━━━━━━━━━━━━━━━━━━━\n";
+        $text .= "Laporan resmi digenerate langsung dari _Dashboard Keuangan & Investasi Maijek Nusantara_ 🚀";
+
+        return $this->sendMessage($text);
+    }
 }

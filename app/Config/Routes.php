@@ -16,6 +16,7 @@ $routes->get('auth/logout', 'AuthController::logout');
 $routes->group('', ['filter' => 'auth'], static function ($routes) {
     // Dashboard
     $routes->get('dashboard', 'DashboardController::index');
+    $routes->post('dashboard/send-wa-recap', 'DashboardController::sendWaRecap');
 
     // Transactions
     $routes->get('transactions', 'TransactionController::index');
