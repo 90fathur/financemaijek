@@ -560,6 +560,14 @@
         </div>
     </div>
 
+    <?php
+        helper(['finance', 'form', 'url']);
+        $globalDb = \Config\Database::connect();
+        $globalCategories = $globalDb->table('categories')->orderBy('nama_kategori', 'ASC')->get()->getResultArray();
+        $globalKasAccounts = $globalDb->table('kas_accounts')->orderBy('nama_akun', 'ASC')->get()->getResultArray();
+        $globalInvestors = $globalDb->table('investors')->where('status', 'aktif')->orderBy('nama_investor', 'ASC')->get()->getResultArray();
+    ?>
+
     <!-- Quick Global Modal: Tambah Transaksi Cepat -->
     <div class="modal fade" id="modalTambahTransaksiCepat" tabindex="-1" aria-labelledby="tambahTxTitle" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-md">
@@ -578,7 +586,7 @@
                             <div class="col-6">
                                 <label class="form-label-compact">Tipe Transaksi <span class="text-danger">*</span></label>
                                 <select name="tipe" id="quick_tipe" class="form-select form-select-sm" required onchange="filterQuickCategories()">
-                                    <option value="pemasukan">🟢 Pemasukan (Inflow)</option>
+                                    <option value="pemasukan" selected>🟢 Pemasukan (Inflow)</option>
                                     <option value="pengeluaran">🔴 Pengeluaran (Outflow)</option>
                                 </select>
                             </div>
@@ -593,13 +601,30 @@
                             <div class="col-6">
                                 <label class="form-label-compact">Kategori <span class="text-danger">*</span></label>
                                 <select name="category_id" id="quick_category_id" class="form-select form-select-sm" required>
-                                    <!-- Populated dynamically via JS -->
+                                    <?php 
+                                    $defaultQuickCats = array_filter($globalCategories, function($c) {
+                                        return ($c['tipe'] ?? '') === 'pemasukan';
+                                    });
+                                    ?>
+                                    <?php if (!empty($defaultQuickCats)): ?>
+                                        <?php foreach ($defaultQuickCats as $c): ?>
+                                            <option value="<?= $c['id'] ?>"><?= esc($c['nama_kategori']) ?></option>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <option value="">-- Belum ada kategori pemasukan --</option>
+                                    <?php endif; ?>
                                 </select>
                             </div>
                             <div class="col-6">
                                 <label class="form-label-compact">Rekening Kas / Bank <span class="text-danger">*</span></label>
                                 <select name="kas_account_id" id="quick_kas_account_id" class="form-select form-select-sm" required>
-                                    <!-- Populated dynamically -->
+                                    <?php if (!empty($globalKasAccounts)): ?>
+                                        <?php foreach ($globalKasAccounts as $k): ?>
+                                            <option value="<?= $k['id'] ?>"><?= esc($k['nama_akun']) ?> (<?= function_exists('format_rupiah') ? format_rupiah($k['saldo_saat_ini']) : 'Rp ' . number_format($k['saldo_saat_ini'], 0, ',', '.') ?>)</option>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <option value="">-- Belum ada rekening kas --</option>
+                                    <?php endif; ?>
                                 </select>
                             </div>
                             <div class="col-6">
@@ -613,6 +638,11 @@
                                 <label class="form-label-compact">Investor Terkait (Opsional)</label>
                                 <select name="investor_id" id="quick_investor_id" class="form-select form-select-sm">
                                     <option value="">-- Bukan Transaksi Investor --</option>
+                                    <?php if (!empty($globalInvestors)): ?>
+                                        <?php foreach ($globalInvestors as $i): ?>
+                                            <option value="<?= $i['id'] ?>"><?= esc($i['nama_investor']) ?> (<?= esc($i['kode_investor']) ?> - <?= $i['persentase_bagi_hasil'] ?>%)</option>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
                                 </select>
                             </div>
                             <div class="col-12">
@@ -672,33 +702,10 @@
             return 'Rp ' + Number(number).toLocaleString('id-ID');
         }
 
-        // Pre-fill categories and accounts for quick modal
-        window.allCategories = [];
-        window.allKasAccounts = [];
-        window.allInvestors = [];
-
-        function initQuickModalData(categories, kasAccounts, investors) {
-            window.allCategories = categories || [];
-            window.allKasAccounts = kasAccounts || [];
-            window.allInvestors = investors || [];
-
-            // Populate Kas Accounts
-            const kasSelect = document.getElementById('quick_kas_account_id');
-            if (kasSelect) {
-                kasSelect.innerHTML = window.allKasAccounts.map(k => 
-                    `<option value="${k.id}">${k.nama_akun} (${formatRupiahJS(k.saldo_saat_ini)})</option>`
-                ).join('');
-            }
-
-            // Populate Investors
-            const invSelect = document.getElementById('quick_investor_id');
-            if (invSelect) {
-                invSelect.innerHTML = '<option value="">-- Bukan Transaksi Investor --</option>' + 
-                    window.allInvestors.map(i => `<option value="${i.id}">${i.nama_investor} (${i.kode_investor} - ${i.persentase_bagi_hasil}%)</option>`).join('');
-            }
-
-            filterQuickCategories();
-        }
+        // Global master data for quick modal (available everywhere across all pages)
+        window.allCategories = <?= json_encode($globalCategories) ?>;
+        window.allKasAccounts = <?= json_encode($globalKasAccounts) ?>;
+        window.allInvestors = <?= json_encode($globalInvestors) ?>;
 
         function filterQuickCategories() {
             const tipeSelect = document.getElementById('quick_tipe');
@@ -706,11 +713,51 @@
             if (!tipeSelect || !catSelect) return;
 
             const selectedTipe = tipeSelect.value;
-            const filtered = window.allCategories.filter(c => c.tipe === selectedTipe);
-            catSelect.innerHTML = filtered.map(c => 
-                `<option value="${c.id}">${c.nama_kategori}</option>`
-            ).join('');
+            const filtered = (window.allCategories || []).filter(c => c.tipe === selectedTipe);
+            
+            if (filtered.length > 0) {
+                catSelect.innerHTML = filtered.map(c => 
+                    `<option value="${c.id}">${c.nama_kategori}</option>`
+                ).join('');
+            } else {
+                catSelect.innerHTML = '<option value="">-- Belum ada kategori untuk tipe ini --</option>';
+            }
         }
+
+        function initQuickModalData(categories, kasAccounts, investors) {
+            if (Array.isArray(categories) && categories.length > 0 && categories[0].tipe) {
+                window.allCategories = categories;
+            }
+            if (Array.isArray(kasAccounts) && kasAccounts.length > 0 && kasAccounts[0].nama_akun) {
+                window.allKasAccounts = kasAccounts;
+                const kasSelect = document.getElementById('quick_kas_account_id');
+                if (kasSelect) {
+                    kasSelect.innerHTML = window.allKasAccounts.map(k => 
+                        `<option value="${k.id}">${k.nama_akun} (${formatRupiahJS(k.saldo_saat_ini)})</option>`
+                    ).join('');
+                }
+            }
+            if (Array.isArray(investors) && investors.length > 0 && investors[0].nama_investor) {
+                window.allInvestors = investors;
+                const invSelect = document.getElementById('quick_investor_id');
+                if (invSelect) {
+                    invSelect.innerHTML = '<option value="">-- Bukan Transaksi Investor --</option>' + 
+                        window.allInvestors.map(i => `<option value="${i.id}">${i.nama_investor} (${i.kode_investor} - ${i.persentase_bagi_hasil}%)</option>`).join('');
+                }
+            }
+            filterQuickCategories();
+        }
+
+        // Initialize and bind modal event
+        document.addEventListener('DOMContentLoaded', function() {
+            filterQuickCategories();
+            const quickModal = document.getElementById('modalTambahTransaksiCepat');
+            if (quickModal) {
+                quickModal.addEventListener('show.bs.modal', function() {
+                    filterQuickCategories();
+                });
+            }
+        });
     </script>
 
     <?= $this->renderSection('scripts') ?>

@@ -406,13 +406,6 @@
 
 <?= $this->section('scripts') ?>
 <script>
-    // Initialize quick modal datasets
-    initQuickModalData(
-        <?= json_encode($expenseCategories + $incomeCategories) ?>,
-        <?= json_encode($kasAccounts) ?>,
-        <?= json_encode($investors) ?>
-    );
-
     // 1. Chart: Monthly Cashflow Area Line
     const monthlyLabels = <?= $monthlyLabels ?>;
     const monthlyInflow = <?= $monthlyInflow ?>;
